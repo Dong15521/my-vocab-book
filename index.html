@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的专属单词本</title>
+    <style>
+        :root {
+            --primary-color: #4A90E2;
+            --bg-color: #F5F7FA;
+            --card-bg: #FFFFFF;
+            --text-color: #333333;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 { text-align: center; color: var(--primary-color); }
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        input[type="text"] {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover { background-color: #357ABD; }
+        
+        /* 翻译结果区域 */
+        #translationResult {
+            display: none;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px dashed #eee;
+        }
+        .word-title { font-size: 24px; font-weight: bold; color: var(--primary-color); margin: 0 0 10px 0; }
+        .translation-text { font-size: 18px; margin-bottom: 15px; }
+        
+        /* 历史记录区域 */
+        .history-item {
+            background-color: #f9f9f9;
+            border-left: 4px solid var(--primary-color);
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+        .history-word { font-weight: bold; font-size: 18px; color: var(--primary-color); }
+        .history-trans { color: #666; margin: 5px 0; }
+        .history-remark { font-size: 14px; color: #888; font-style: italic; background: #eee; padding: 4px 8px; border-radius: 4px; display: inline-block;}
+        
+        .loading { text-align: center; color: #888; display: none; }
+    </style>
+</head>
+<body>
+
+    <h1>📚 我的专属单词本</h1>
+
+    <div class="card">
+        <input type="text" id="wordInput" placeholder="输入你想查询的英文单词..." onkeydown="if(event.key==='Enter') searchWord()">
+        <button onclick="searchWord()">查询翻译</button>
+        <p id="loadingText" class="loading">正在努力翻译中...</p>
+
+        <div id="translationResult">
+            <h2 class="word-title" id="displayWord"></h2>
+            <p class="translation-text" id="displayTranslation"></p>
+            <input type="text" id="remarkInput" placeholder="添加常用用法/备注 (例如: study hard)">
+            <button onclick="saveToHistory()">保存到我的单词本</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>🕰️ 历史记录</h3>
+        <input type="text" id="historySearchInput" placeholder="在历史记录中搜索..." oninput="filterHistory()">
+        <div id="historyList">
+            </div>
+    </div>
+
+    <script>
+        // 页面加载时，渲染历史记录
+        window.onload = function() {
+            renderHistory();
+        };
+
+        let currentWordData = {}; // 用于暂存当前查询的单词信息
+
+        // 1. 查询翻译功能
+        async function searchWord() {
+            const word = document.getElementById('wordInput').value.trim().toLowerCase();
+            if (!word) {
+                alert("请输入单词！");
+                return;
+            }
+
+            // UI 状态切换
+            document.getElementById('translationResult').style.display = 'none';
+            document.getElementById('loadingText').style.display = 'block';
+            document.getElementById('remarkInput').value = ''; // 清空上次的备注
+
+            try {
+                // 使用免费的 MyMemory 翻译 API
+                const response = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|zh-CN`);
+                const data = await response.json();
+                
+                const translation = data.responseData.translatedText;
+
+                // 暂存数据
+                currentWordData = {
+                    word: word,
+                    translation: translation
+                };
+
+                // 更新 UI
+                document.getElementById('displayWord').innerText = word;
+                document.getElementById('displayTranslation').innerText = translation;
+                
+                document.getElementById('loadingText').style.display = 'none';
+                document.getElementById('translationResult').style.display = 'block';
+
+            } catch (error) {
+                alert("翻译失败，请检查网络或稍后再试。");
+                document.getElementById('loadingText').style.display = 'none';
+            }
+        }
+
+        // 2. 保存单词和备注到历史记录
+        function saveToHistory() {
+            const remark = document.getElementById('remarkInput').value.trim();
+            const wordToSave = {
+                word: currentWordData.word,
+                translation: currentWordData.translation,
+                remark: remark,
+                timestamp: new Date().getTime()
+            };
+
+            // 从 localStorage 获取已有的历史记录（如果没有则为空数组）
+            let history = JSON.parse(localStorage.getItem('vocabHistory')) || [];
+
+            // 检查是否已经存在该单词，如果存在则更新它（先删除旧的）
+            history = history.filter(item => item.word !== wordToSave.word);
+            
+            // 将新单词放到数组最前面
+            history.unshift(wordToSave);
+
+            // 保存回 localStorage
+            localStorage.setItem('vocabHistory', JSON.stringify(history));
+
+            alert("保存成功！");
+            document.getElementById('wordInput').value = '';
+            document.getElementById('translationResult').style.display = 'none';
+            
+            // 重新渲染历史列表
+            renderHistory();
+        }
+
+        // 3. 渲染历史记录列表
+        function renderHistory(filterText = '') {
+            const historyList = document.getElementById('historyList');
+            let history = JSON.parse(localStorage.getItem('vocabHistory')) || [];
+
+            // 如果有搜索词，则进行过滤
+            if (filterText) {
+                const lowerFilter = filterText.toLowerCase();
+                history = history.filter(item => 
+                    item.word.toLowerCase().includes(lowerFilter) || 
+                    item.translation.includes(lowerFilter) ||
+                    (item.remark && item.remark.toLowerCase().includes(lowerFilter))
+                );
+            }
+
+            // 清空当前列表
+            historyList.innerHTML = '';
+
+            if (history.length === 0) {
+                historyList.innerHTML = '<p style="color:#888; text-align:center;">暂无匹配的记录</p>';
+                return;
+            }
+
+            // 生成 HTML
+            history.forEach(item => {
+                const remarkHtml = item.remark ? `<div class="history-remark">📝 备注: ${item.remark}</div>` : '';
+                const itemHtml = `
+                    <div class="history-item">
+                        <div class="history-word">${item.word}</div>
+                        <div class="history-trans">${item.translation}</div>
+                        ${remarkHtml}
+                    </div>
+                `;
+                historyList.insertAdjacentHTML('beforeend', itemHtml);
+            });
+        }
+
+        // 4. 搜索历史记录功能
+        function filterHistory() {
+            const filterText = document.getElementById('historySearchInput').value.trim();
+            renderHistory(filterText);
+        }
+    </script>
+</body>
+</html>
